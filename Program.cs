@@ -3,61 +3,74 @@ using static System.Console;
 
 using static LFunctional;
 using static SimpleTypes;
+using static CompoundTypes;
 
 TestResult();
 TestSimpleTypes();
+TestCompoundTypes();
+
+void TestCompoundTypes() {
+    var r = GuinnessPerson.Of("right", 3, 5);
+    var w = GuinnessPerson.Of("wrong", 5, 3);
+
+    r.ForEach(s => Log($"{s.Name} is right"));
+    w.Match(s => Log($"{s.Name} is wrong"), e => Log($"Error {e}"));
+}
 
 void TestSimpleTypes() {
-    var s = from bob in Age.Create(80)
-            from jon in Age.Create(50)
+    var s = from bob in Age.Of(80)
+            from jon in Age.Of(50)
             select jon + bob;
 
     Log($"bob + jon: {s}");
 
-    //var a = new Age(); // compiler error
-    // var a = new Age(400) // compiler error
+    // Compiler errors ...
+    //var a = new Age();
+    //var a = new Age(400);
+    //var b = new Name();
+    //var b = new Name("bob");
 
-    var mathus = Age.Create(400);
+    var mathus = Age.Of(400);
 
-    var t = from bob in Age.Create(80)
-            from jon in Age.Create(50)
+    var t = from bob in Age.Of(80)
+            from jon in Age.Of(50)
             from m in mathus
             select jon + bob + m;
 
-    t.Iter(t => Log($"{t} shouldn't print"));
+    t.ForEach(t => Log($"{t} shouldn't print"));
     t.Match(v => Log($"{v} shouldn't print"), e => Log(e));
 
-    var n = Name.Create("luca");
+    var n = Name.Of("luca");
 
     // strings and ints can be added
-    var z = from bob in Age.Create(80)
-            from jon in Age.Create(50)
-            from m in Name.Create("luca")
+    var z = from bob in Age.Of(80)
+            from jon in Age.Of(50)
+            from m in Name.Of("luca")
             select jon + bob + m; // Implicit conversion, no need to do a .Value
 
-    z.Iter(WriteLine);
+    z.ForEach(WriteLine);
 
-    mathus.Match(m => throw new Exception(m.ToString()), Log);
+    mathus.Match(m => throw new Exception(m.ToString()), e => Log(e));
 
-    var p = Age.Create(32);
+    var p = Age.Of(32);
     var pp = p.Match(id, e => throw new Exception(e));
 
     // This made not to compile, otherwise it would bypass the Create function
     // var p2 = pp with { Value = 3};
 
-    var zip = ZipCode.Create("ffessf");
-    var rip = ZipCode.Create("12345");
+    var zip = ZipCode.Of("ffessf");
+    var rip = ZipCode.Of("12345");
 
     var zips = from r in zip
                from w in rip
                select r + ";" + w;
 
-    zips.IterFailure(WriteLine);
+    zips.ForEachFailure(e => Log(e));
 }
 
 void TestResult() {
-    var r1 = Success<int, string>(1);
-    var r2 = Success<int, string>(2);
+    var r1 = Success(1);
+    var r2 = Success(2);
 
     var x = from i1 in r1
             from i2 in r2
@@ -65,7 +78,7 @@ void TestResult() {
 
     Log($"Result: {x}");
 
-    var r3 = Failure<int, string>("Strange failure");
+    var r3 = Failure<int>("Strange failure");
 
     var y = from i1 in r1
             from i2 in r2
@@ -73,13 +86,6 @@ void TestResult() {
             select i1 + i2 + i3;
 
     Log($"Failure: {y}");
-
-    var k = x switch {
-        Result<int,string>.Success s => s.Value,
-        Result<int,string>.Failure _ => 0,
-        _                            => -1
-    };
-    Log($"Success: {k}");
 
     var k1 = x.Match(
         success: v => v + 1,
@@ -97,5 +103,5 @@ void TestResult() {
 
     Log($"Failure: {pr}");
 
-    p1.Iter(i => Log($"{i}"));
+    p1.ForEach(i => Log($"{i}"));
 }

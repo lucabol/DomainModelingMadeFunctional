@@ -2,58 +2,93 @@
 
 static partial class LFunctional {
 
-    public record Result<S,F>() {
-        public record Success(S Value)   : Result<S,F>;
-        public record Failure(F Error)   : Result<S,F>;
+    public record Error(string Message) {
+        public static implicit operator Error(string s) => new Error(s);
+        public static implicit operator string(Error e) => e.Message;
+
+        public static Error DefaultError = new Error("Unknown error");
     }
 
-    public static Result<S,F> Success<S, F>(S s) => new Result<S,F>.Success(s);
-    public static Result<S,F> Failure<S, F>(F e) => new Result<S,F>.Failure(e);
+    // The elevated type
+    public record Result<S>() {
+        internal record Success(S Value)   : Result<S>;
+        internal record Failure(Error Error)   : Result<S>;
 
-    public static Result<S,string> Success<S>(S s) => new Result<S,string>.Success(s);
-    public static Result<S,string> Failure<S>(string e) => new Result<S,string>.Failure(e);
+        public static implicit operator Result<S>(S s)      => Success(s);
+        public static implicit operator Result<S>(Error e)  => Failure<S>(e);
+        public static implicit operator Result<S>(string s) => Failure<S>(s);
 
-    public static K Match<S, F, K>(this Result<S,F> @this, Func<S,K> success, Func<F, K> failure)
+    }
+
+    // Return functions
+    public static Result<S> Success<S>(S s)         => new Result<S>.Success(s);
+    public static Result<S> Failure<S>(Error e)     => new Result<S>.Failure(e);
+    public static Result<S> Failure<S>(string s)    => new Result<S>.Failure(s);
+
+
+    // Extractor
+    public static R Match<S,R>(this Result<S> @this, Func<S,R> success, Func<Error, R> failure)
         => @this switch {
-            Result<S, F>.Success s => success(s.Value),
-            Result<S, F>.Failure e => failure(e.Error),
+            Result<S>.Success s => success(s.Value),
+            Result<S>.Failure e => failure(e.Error),
             _                      => throw new Exception("Either success or failure.") };
 
-    static public Result<S1, F> Map<S, S1,F>(this Result<S,F> @this, Func<S,S1> f)
+    // Classical functional lore
+    public static Result<R> Map<S,R>(this Result<S> @this, Func<S,R> f)
         => @this.Match(
-            v => Success<S1,F>(f(v)),
-            e => Failure<S1, F>(e)
-        ); 
+            v => f(v),
+            Failure<R>); 
 
-    static public Result<S, F1> MapError<S, F, F1>(this Result<S, F> @this, Func<F, F1> f)
+    public static Result<S> MapError<S>(this Result<S> @this, Func<Error, Error> f)
         => @this.Match(
-            s => Success<S,F1>(s),
-            e => Failure<S,F1>(f(e)));
+            s => s,
+            e => Failure<S>(f(e)));
 
-    static public Result<S1, F> Bind<S, S1, F>(this Result<S, F> @this, Func<S, Result<S1,F>> f)
+    public static Result<R> Bind<S,R>(this Result<S> @this, Func<S,Result<R>> f)
         => @this.Match(
             s => f(s),
-            e => Failure<S1, F>(e));
+            Failure<R>);
+
+    public static Result<R> Apply<S,R>(Result<Func<S,R>> fR, Result<S> xR) =>
+        (fR, xR) switch {
+            (Result<Func<S,R>>.Success sf,Result<S>.Success sx)
+                                                    => sf.Value(sx.Value),
+            (Result<Func<S,R>>.Failure sf, _)       => Failure<R>(sf.Error),
+            (_ ,Result<S>.Failure sx)               => Failure<R>(sx.Error),
+            _                                       => Throw<R>()
+        };
+
+    // Playing nice with Actions
+    public static void ForEach<S>(this Result<S> @this, Action<S> a) {
+        if(@this is Result<S>.Success s) a(s.Value);
+    }
+    public static void ForEachFailure<S>(this Result<S> @this, Action<Error> a) {
+        if(@this is Result<S>.Failure f) a(f.Error);
+    }
 
     // for LINQ
-    public static Result<S1,F> Select<S, S1, F>(this Result<S,F> @this, Func<S, S1> f)
+    public static Result<S1> Select<S,S1>(this Result<S> @this, Func<S, S1> f)
         => @this.Map(f);
 
-    public static Result<S2,F> SelectMany<S, S1, S2, F>
-        (this Result<S,F> @this, Func<S, Result<S1,F>> bind, Func<S,S1,S2> proj)
+    public static Result<R> SelectMany<S,S1,R>
+        (this Result<S> @this, Func<S,Result<S1>> bind, Func<S,S1,R> proj)
         => @this.Match(
             s => bind(s).Match(
-                s1 => Success<S2, F>(proj(s, s1)),
-                e  => Failure<S2, F>(e)
+                s1 => proj(s, s1),
+                e  => Failure<R>(e)
             ),
-            e => Failure<S2, F>(e) );
+            e => Failure<R>(e) );
 
-    public static void Iter<S, F>(this Result<S, F> @this, Action<S> a) {
-        if(@this is Result<S,F>.Success s) a(s.Value);
-    }
-    public static void IterFailure<S, F>(this Result<S, F> @this, Action<F> a) {
-        if(@this is Result<S,F>.Failure f) a(f.Error);
-    }
-        
-    static private Result<S,F> Throw<S,F>() => throw new Exception("Either success or failure.");
+    // Unfortunately no way to specify an error if the Where clause is not satisfied
+    public static Result<S> Where<S>(this Result<S> @this, Func<S, bool> pred)
+        => @this.Match(
+            s => pred(s) ? Success<S>(s) : Failure<S>(Error.DefaultError), e => Failure<S>(e));
+
+    public static Result<S> WhereError<S>(this Result<S> @this, Error e) =>
+        @this.Match(
+            _ => @this,
+            te => te == Error.DefaultError ? Failure<S>(e) : @this);
+
+    // Utilities 
+    static private Result<S> Throw<S>() => throw new Exception("Either success or failure.");
 }
